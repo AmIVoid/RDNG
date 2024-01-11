@@ -9,6 +9,7 @@ intents.message_content = True
 client = discord.Client(intents=intents)
 
 bot = commands.Bot(command_prefix='$', intents=intents)
+counter_file = 'counter.txt'
 
 def generate_string():
     with open('Adjectives.txt', 'r') as adj_file, open('Nouns.txt', 'r') as noun_file:
@@ -23,10 +24,42 @@ def generate_string():
 
     return result
 
+def read_counter():
+    try:
+        with open(counter_file, 'r') as file:
+            return int(file.read().strip())
+    except FileNotFoundError:
+        return 0
+
+def update_counter(count):
+    with open(counter_file, 'w') as file:
+        file.write(str(count))
+
+def save_to_file(text):
+    with open('generated_responses.txt', 'a') as file:
+        file.write(text + '\n')
+
+def split_messages(message, max_length=2000):
+    if len(message) <= max_length:
+        return [message]
+
+    messages = []
+    current_message = ""
+    for line in message.split('\n'):
+        if len(current_message) + len(line) + 1 > max_length:
+            messages.append(current_message)
+            current_message = line
+        else:
+            current_message += (line + '\n')
+
+    messages.append(current_message)  # Append any remaining text in current_message
+    return messages
+
 @client.event
 async def on_ready():
     print('We have logged in as {0.user}'.format(client))
-    await client.change_presence(activity=discord.Game(name="$gen"))
+    counter = read_counter()
+    await client.change_presence(activity=discord.Game(name=f"Generated {counter} names"))
 
 @client.event
 async def on_message(message):
@@ -41,9 +74,20 @@ async def on_message(message):
 
         result = ''
         for _ in range(num):
-            result += generate_string() + '\n'
+            generated_string = generate_string()
+            result += generated_string + '\n'
+            save_to_file(generated_string)
 
-        await message.channel.send(result)
+        counter = read_counter() + num
+        update_counter(counter)
+        await client.change_presence(activity=discord.Game(name=f"Generated {counter} names"))
+
+        # Split and send message if it's too long
+        if len(result) > 2000:
+            for part in split_messages(result):
+                await message.channel.send(part)
+        else:
+            await message.channel.send(result)
 
 load_dotenv()
 client.run(os.getenv('DISCORD_TOKEN'))
